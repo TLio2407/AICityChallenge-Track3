@@ -8,6 +8,7 @@ MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 ADAPTER_PATH = "./lora-qwen-traffic-reasoning"
 TEST_JSON = "test/test.json"
 OUTPUT_JSON = "submission.json"
+VIDEO_DIR = "test/videos/"
 
 print("Loading Base VLM and LoRA Adapter...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
@@ -28,7 +29,7 @@ print("Running Video Inference...")
 for item in test_data["items"]:
     video_id = item["video_id"]
     task_type = item.get("task_type", "open_qa")
-    video_path = f"test/videos/{video_id}.mp4"
+    video_path = f"{VIDEO_DIR}/{video_id}.mp4"
     
     # Task-specific prompt engineering
     system_instruction = "You are a traffic anomaly expert."
