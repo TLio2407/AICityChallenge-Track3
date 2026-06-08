@@ -1,0 +1,10 @@
+torch>=2.1.2
+torchvision
+transformers>=4.44.0
+qwen-vl-utils
+peft
+trl
+datasets
+bitsandbytes
+accelerate
+pandas
