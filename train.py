@@ -6,30 +6,50 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer, SFTConfig
 
 MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
-OUTPUT_DIR = "./lora-qwen-traffic-reasoning"
-# Assuming videos are mapped correctly in your dataset JSON
-DATA_PATH = "train/temporal_localization_cleaned.json" 
+OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
+DATA_PATH = "train/all_tasks_merged.json" 
 
 def format_vlm_prompt(examples):
-    """Formats the dataset for Qwen2-VL video ingestion."""
+    """Dynamically formats the dataset based on task type."""
     texts = []
-    for video_path, question, answer in zip(examples['video_id'], examples['question'], examples['answer']):
-        # We instruct the model precisely for JSON output to optimize temporal localization
-        sys_prompt = "You are a traffic anomaly expert. Provide exact temporal boundaries in strict JSON format: {'start': X, 'end': Y}."
+    
+    # zip all necessary columns
+    zipped_data = zip(
+        examples['video_id'], 
+        examples['question'], 
+        examples['answer'], 
+        examples['task_type']
+    )
+    
+    for video_path, question, answer, task_type in zipped_data:
         
-        # Qwen2-VL specific chat template format
+        # 1. Dynamic System Prompting based on Task
+        sys_prompt = "You are a traffic anomaly expert."
+        
+        if task_type == "temporal_localization":
+            sys_prompt += " Provide exact temporal boundaries in strict JSON format: {'start': X, 'end': Y}."
+        elif task_type in ["bcq", "bcq_openended"]:
+            sys_prompt += " Answer strictly with 'Yes' or 'No'."
+        elif task_type in ["mcq", "mcq_openended"]:
+            sys_prompt += " Select the best option. Answer concisely."
+        else:
+            # For open_qa, causal_linkage, video_summarization, etc.
+            sys_prompt += " Analyze the video and answer the question in detail."
+
+        # 2. Build the Qwen2-VL Message Architecture
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": [
-                # Sample video at 1 FPS to fit into context window memory constraints
-                {"type": "video", "video": f"videos/{video_path}.mp4", "fps": 1.0},
+                {"type": "video", "video": f"train/videos/{video_path}.mp4", "fps": 1.0},
                 {"type": "text", "text": question}
             ]},
             {"role": "assistant", "content": answer}
         ]
         
+        # Apply the chat template
         text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
         texts.append(text)
+        
     return {"text": texts}
 
 bnb_config = BitsAndBytesConfig(
@@ -39,7 +59,7 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_compute_dtype=torch.bfloat16
 )
 
-print("Loading Model and Processor...")
+print("Loading Qwen2-VL Model and Processor...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
 model = Qwen2VLForConditionalGeneration.from_pretrained(
     MODEL_ID,
@@ -58,17 +78,22 @@ lora_config = LoraConfig(
 )
 model = get_peft_model(model, lora_config)
 
+# Load the merged multi-task dataset
+print("Loading merged multi-task dataset...")
 dataset = load_dataset("json", data_files=DATA_PATH, split="train")
+
+# Map the formatting function
 dataset = dataset.map(format_vlm_prompt, batched=True, remove_columns=dataset.column_names)
 
+# We increase max_steps because we are training on 10x the data now
 training_args = SFTConfig(
     output_dir=OUTPUT_DIR,
     per_device_train_batch_size=1,
     gradient_accumulation_steps=16, 
-    learning_rate=2e-5, # Lower LR for VLMs compared to text-only LLMs
-    logging_steps=10,
-    max_steps=2000,
-    save_steps=400,
+    learning_rate=2e-5, 
+    logging_steps=20,
+    max_steps=5000, # Increased from 2000 to account for all 10 tasks
+    save_steps=1000,
     bf16=True,
     optim="paged_adamw_8bit",
     dataset_text_field="text"
@@ -82,6 +107,6 @@ trainer = SFTTrainer(
     tokenizer=processor.tokenizer,
 )
 
-print("Starting VLM LoRA Training...")
+print("Starting Full Multi-Task VLM LoRA Training...")
 trainer.train()
 trainer.save_model(OUTPUT_DIR)
