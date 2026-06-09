@@ -24,40 +24,38 @@ def process_and_merge():
             
         task_type = file_name.replace(".json", "")
         
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             
         kept_items = 0
         
         for item in data:
-            # Tag the item with its task type so the trainer knows how to prompt it
             item["task_type"] = task_type
             
-            # Special cleaning rule for the noisy temporal localization data
             if task_type == "temporal_localization":
                 try:
+                    # Robust parsing for temporal boundaries
                     answer_json = json.loads(item["answer"])
                     start_time = float(answer_json.get("start", 0))
                     end_time = float(answer_json.get("end", 0))
-                    # Keep only mathematically valid timestamps under 5 minutes
+                    
                     if (start_time < end_time) and (end_time <= 300) and (end_time - start_time > 0.5):
                         merged_data.append(item)
                         kept_items += 1
                 except (json.JSONDecodeError, ValueError, KeyError):
-                    continue # Drop malformed temporal data
+                    continue
             else:
-                # For all other 9 tasks, keep the data as-is
                 merged_data.append(item)
                 kept_items += 1
                 
         stats[task_type] = kept_items
         print(f"Processed {task_type}: Kept {kept_items} items.")
 
-    # Shuffle the dataset to prevent catastrophic forgetting during multi-task learning
+    # Shuffle to prevent catastrophic forgetting
     random.seed(42)
     random.shuffle(merged_data)
 
-    with open(OUTPUT_FILE, "w") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(merged_data, f, indent=4)
         
     print(f"\nSuccessfully merged {len(merged_data)} total items into {OUTPUT_FILE}")

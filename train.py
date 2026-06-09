@@ -10,10 +10,8 @@ OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
 DATA_PATH = "train/all_tasks_merged.json" 
 
 def format_vlm_prompt(examples):
-    """Dynamically formats the dataset based on task type."""
     texts = []
     
-    # zip all necessary columns
     zipped_data = zip(
         examples['video_id'], 
         examples['question'], 
@@ -22,8 +20,6 @@ def format_vlm_prompt(examples):
     )
     
     for video_path, question, answer, task_type in zipped_data:
-        
-        # 1. Dynamic System Prompting based on Task
         sys_prompt = "You are a traffic anomaly expert."
         
         if task_type == "temporal_localization":
@@ -33,20 +29,18 @@ def format_vlm_prompt(examples):
         elif task_type in ["mcq", "mcq_openended"]:
             sys_prompt += " Select the best option. Answer concisely."
         else:
-            # For open_qa, causal_linkage, video_summarization, etc.
             sys_prompt += " Analyze the video and answer the question in detail."
 
-        # 2. Build the Qwen2-VL Message Architecture
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": [
-                {"type": "video", "video": f"train/videos/{video_path}.mp4", "fps": 1.0},
+                # Increased FPS to 2.0 to capture finer temporal details for mIoU metrics
+                {"type": "video", "video": f"train/videos/{video_path}.mp4", "fps": 2.0},
                 {"type": "text", "text": question}
             ]},
             {"role": "assistant", "content": answer}
         ]
         
-        # Apply the chat template
         text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
         texts.append(text)
         
@@ -68,9 +62,10 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 )
 model = prepare_model_for_kbit_training(model)
 
+# Increased LoRA capacity (r=64) to handle 10 different tasks simultaneously
 lora_config = LoraConfig(
-    r=16,
-    lora_alpha=32,
+    r=64,
+    lora_alpha=128,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0.05,
     bias="none",
@@ -78,21 +73,19 @@ lora_config = LoraConfig(
 )
 model = get_peft_model(model, lora_config)
 
-# Load the merged multi-task dataset
 print("Loading merged multi-task dataset...")
 dataset = load_dataset("json", data_files=DATA_PATH, split="train")
-
-# Map the formatting function
 dataset = dataset.map(format_vlm_prompt, batched=True, remove_columns=dataset.column_names)
 
-# We increase max_steps because we are training on 10x the data now
 training_args = SFTConfig(
     output_dir=OUTPUT_DIR,
     per_device_train_batch_size=1,
     gradient_accumulation_steps=16, 
     learning_rate=2e-5, 
+    lr_scheduler_type="cosine", # Added Cosine Scheduler
+    warmup_ratio=0.05,          # Added Warmup 
     logging_steps=20,
-    max_steps=5000, # Increased from 2000 to account for all 10 tasks
+    max_steps=5000, 
     save_steps=1000,
     bf16=True,
     optim="paged_adamw_8bit",
