@@ -9,8 +9,8 @@ TRAIN_FILES = [
     "temporal_localization.json", "causal_linkage.json", "temporal_description.json"
 ]
 
-TRAIN_DIR = "train/" # Adjust if your path is different
-OUTPUT_FILE = "train/all_tasks_merged.json"
+TRAIN_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train" # Adjust if your path is different
+OUTPUT_FILE = "all_tasks_merged.json"
 
 def process_and_merge():
     merged_data = []
@@ -27,26 +27,27 @@ def process_and_merge():
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             
+        # --- ROBUST JSON PARSING ---
+        # Determine how to extract the list of items based on the JSON structure
+        if isinstance(data, dict):
+            if "items" in data:
+                data_list = data["items"]
+            else:
+                # If the JSON is structured as { "video_1": {...}, "video_2": {...} }
+                data_list = list(data.values())
+        elif isinstance(data, list):
+            data_list = data
+        else:
+            print(f"Error: Unknown JSON structure in {file_name}")
+            continue
+            
         kept_items = 0
         
-        for item in data:
-            item["task_type"] = task_type
-            
-            if task_type == "temporal_localization":
-                try:
-                    # Robust parsing for temporal boundaries
-                    answer_json = json.loads(item["answer"])
-                    start_time = float(answer_json.get("start", 0))
-                    end_time = float(answer_json.get("end", 0))
-                    
-                    if (start_time < end_time) and (end_time <= 300) and (end_time - start_time > 0.5):
-                        merged_data.append(item)
-                        kept_items += 1
-                except (json.JSONDecodeError, ValueError, KeyError):
-                    continue
-            else:
-                merged_data.append(item)
-                kept_items += 1
+        for item in data_list:
+            # Now 'item' is guaranteed to be the dictionary payload
+            item["task_type"] = task_type    
+            merged_data.append(item)
+            kept_items += 1
                 
         stats[task_type] = kept_items
         print(f"Processed {task_type}: Kept {kept_items} items.")

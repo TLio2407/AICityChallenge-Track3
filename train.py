@@ -7,7 +7,7 @@ from trl import SFTTrainer, SFTConfig
 
 MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
-DATA_PATH = "train/all_tasks_merged.json" 
+DATA_PATH = "all_tasks_merged.json" 
 
 def format_vlm_prompt(examples):
     texts = []
@@ -35,7 +35,7 @@ def format_vlm_prompt(examples):
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": [
                 # Increased FPS to 2.0 to capture finer temporal details for mIoU metrics
-                {"type": "video", "video": f"train/videos/{video_path}.mp4", "fps": 2.0},
+                {"type": "video", "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}", "fps": 2.0},
                 {"type": "text", "text": question}
             ]},
             {"role": "assistant", "content": answer}
@@ -83,7 +83,7 @@ training_args = SFTConfig(
     gradient_accumulation_steps=16, 
     learning_rate=2e-5, 
     lr_scheduler_type="cosine", # Added Cosine Scheduler
-    warmup_ratio=0.05,          # Added Warmup 
+    warmup_steps=0.05,          # Added Warmup 
     logging_steps=20,
     max_steps=5000, 
     save_steps=1000,
@@ -95,9 +95,9 @@ training_args = SFTConfig(
 trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
-    peft_config=lora_config,
+    #peft_config=lora_config,
     args=training_args,
-    tokenizer=processor.tokenizer,
+    processing_class=processor,
 )
 
 print("Starting Full Multi-Task VLM LoRA Training...")

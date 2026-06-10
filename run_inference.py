@@ -7,9 +7,9 @@ from qwen_vl_utils import process_vision_info
 
 MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 ADAPTER_PATH = "./lora-qwen-traffic-all-tasks" # Ensure this matches your new training output dir
-TEST_JSON = "test/test.json"
+TEST_JSON = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
 OUTPUT_CSV = "submission.csv"
-VIDEO_DIR = "test/videos/"
+VIDEO_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos/"
 
 print("Loading Base VLM and LoRA Adapter...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
@@ -30,7 +30,7 @@ print("Running Video Inference...")
 for item in test_data["items"]:
     video_id = item["video_id"]
     task_type = item.get("task_type", "open_qa")
-    video_path = f"{VIDEO_DIR}/{video_id}.mp4"
+    video_path = f"{VIDEO_DIR}/{video_id}"
     
     system_instruction = "You are a traffic anomaly expert."
     if task_type == "temporal_localization":
