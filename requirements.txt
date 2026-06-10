@@ -3,7 +3,7 @@ torchvision
 transformers>=4.44.0
 qwen-vl-utils
 peft
-trl
+trl==0.19.1
 datasets
 bitsandbytes
 accelerate
