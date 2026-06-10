@@ -9,12 +9,12 @@ TRAIN_FILES = [
     "temporal_localization.json", "causal_linkage.json", "temporal_description.json"
 ]
 
-TRAIN_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train" # Adjust if your path is different
+TRAIN_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train"
 OUTPUT_FILE = "all_tasks_merged.json"
+TARGET_SAMPLES = 2000  # Adjust this baseline target based on your hardware/time constraints
 
 def process_and_merge():
-    merged_data = []
-    stats = {}
+    task_data_dict = {}
 
     for file_name in TRAIN_FILES:
         file_path = os.path.join(TRAIN_DIR, file_name)
@@ -27,13 +27,11 @@ def process_and_merge():
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             
-        # --- ROBUST JSON PARSING ---
-        # Determine how to extract the list of items based on the JSON structure
+        # Robust JSON Parsing
         if isinstance(data, dict):
             if "items" in data:
                 data_list = data["items"]
             else:
-                # If the JSON is structured as { "video_1": {...}, "video_2": {...} }
                 data_list = list(data.values())
         elif isinstance(data, list):
             data_list = data
@@ -41,16 +39,29 @@ def process_and_merge():
             print(f"Error: Unknown JSON structure in {file_name}")
             continue
             
-        kept_items = 0
-        
         for item in data_list:
-            # Now 'item' is guaranteed to be the dictionary payload
             item["task_type"] = task_type    
-            merged_data.append(item)
-            kept_items += 1
-                
-        stats[task_type] = kept_items
-        print(f"Processed {task_type}: Kept {kept_items} items.")
+            if task_type not in task_data_dict:
+                task_data_dict[task_type] = []
+            task_data_dict[task_type].append(item)
+
+    merged_data = []
+    
+    # Balance and oversample the dataset
+    for task_type, items in task_data_dict.items():
+        if len(items) > TARGET_SAMPLES:
+            # Cap overly large tasks to prevent domination
+            sampled_items = random.sample(items, TARGET_SAMPLES)
+        else:
+            # Upsample smaller tasks (e.g., temporal localization)
+            sampled_items = random.choices(items, k=TARGET_SAMPLES)
+            
+        # Give BCQ and MCQ tasks a 1.5x weight advantage
+        if task_type in ["bcq", "mcq", "bcq_openended", "mcq_openended"]:
+            sampled_items.extend(random.choices(items, k=int(TARGET_SAMPLES * 0.5)))
+            
+        merged_data.extend(sampled_items)
+        print(f"Processed {task_type}: Kept {len(sampled_items)} items (Balanced).")
 
     # Shuffle to prevent catastrophic forgetting
     random.seed(42)

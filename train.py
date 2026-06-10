@@ -3,7 +3,7 @@ import torch
 from datasets import load_dataset
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer, SFTConfig
+from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
 
 MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
@@ -22,19 +22,19 @@ def format_vlm_prompt(examples):
     for video_path, question, answer, task_type in zipped_data:
         sys_prompt = "You are a traffic anomaly expert."
         
+        # STRICT System Prompts
         if task_type == "temporal_localization":
-            sys_prompt += " Provide exact temporal boundaries in strict JSON format: {'start': X, 'end': Y}."
+            sys_prompt += " Output the final answer as a strict JSON: {\"start\": X.X, \"end\": Y.Y}. No other text."
         elif task_type in ["bcq", "bcq_openended"]:
-            sys_prompt += " Answer strictly with 'Yes' or 'No'."
+            sys_prompt += " You must answer strictly with a single word: 'Yes' or 'No'. Do not explain."
         elif task_type in ["mcq", "mcq_openended"]:
-            sys_prompt += " Select the best option. Answer concisely."
+            sys_prompt += " Answer strictly with the exact option provided. Do not include reasoning."
         else:
             sys_prompt += " Analyze the video and answer the question in detail."
 
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": [
-                # Increased FPS to 2.0 to capture finer temporal details for mIoU metrics
                 {"type": "video", "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}", "fps": 2.0},
                 {"type": "text", "text": question}
             ]},
@@ -62,7 +62,6 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 )
 model = prepare_model_for_kbit_training(model)
 
-# Increased LoRA capacity (r=64) to handle 10 different tasks simultaneously
 lora_config = LoraConfig(
     r=64,
     lora_alpha=128,
@@ -77,27 +76,32 @@ print("Loading merged multi-task dataset...")
 dataset = load_dataset("json", data_files=DATA_PATH, split="train")
 dataset = dataset.map(format_vlm_prompt, batched=True, remove_columns=dataset.column_names)
 
+# Define Completion-Only Collator to mask prompt loss during backpropagation
+response_template = "<|im_start|>assistant\n"
+collator = DataCollatorForCompletionOnlyLM(response_template=response_template, tokenizer=processor.tokenizer)
+
 training_args = SFTConfig(
     output_dir=OUTPUT_DIR,
     per_device_train_batch_size=1,
     gradient_accumulation_steps=16, 
     learning_rate=2e-5, 
-    lr_scheduler_type="cosine", # Added Cosine Scheduler
-    warmup_steps=0.05,          # Added Warmup 
+    lr_scheduler_type="cosine",
+    warmup_steps=0.05,          
     logging_steps=20,
     max_steps=5000, 
     save_steps=1000,
     bf16=True,
     optim="paged_adamw_8bit",
-    dataset_text_field="text"
+    dataset_text_field="text",
+    neftune_noise_alpha=5.0  # Added for embedding regularization and improved F1
 )
 
 trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
-    #peft_config=lora_config,
     args=training_args,
     processing_class=processor,
+    data_collator=collator, # Apply prompt masking
 )
 
 print("Starting Full Multi-Task VLM LoRA Training...")
