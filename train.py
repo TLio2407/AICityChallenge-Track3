@@ -10,51 +10,100 @@ OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
 DATA_PATH = "all_tasks_merged.json" 
 
 def format_vlm_prompt(examples):
+    """
+    Convert dataset rows into chat-template strings.
+ 
+    Uses 'training_answer' (built in prepare_data.py) instead of 'answer':
+      - BCQ      → "Yes" or "No"   (1 token, evaluated by regex)
+      - MCQ      → "A"/"B"/"C"/"D" (1 token, evaluated by regex)
+      - *_opened → letter/yn + "\n\n" + full reasoning chain
+      - temporal → {"start":"MM:SS","end":"MM:SS"} JSON
+      - others   → answer + reasoning text
+    """
     texts = []
-    
-    zipped_data = zip(
-        examples['video_id'], 
-        examples['question'], 
-        examples['answer'], 
-        examples['task_type']
-    )
-    
-    for video_path, question, answer, task_type in zipped_data:
-        sys_prompt = "You are a traffic anomaly expert."
-        
-        # FIXED: Isolated prompt logic to preserve reasoning for open-ended tasks
+    for video_path, question, training_answer, task_type in zip(
+        examples["video_id"],
+        examples["question"],
+        examples["training_answer"],
+        examples["task_type"],
+    ):
+        sys_prompt = "You are a traffic anomaly detection and reasoning expert."
+ 
         if task_type == "bcq":
-            sys_prompt += " Answer strictly with 'Yes' or 'No' and nothing else."
+            sys_prompt += (
+                " Answer strictly with exactly one word: 'Yes' or 'No'."
+            )
         elif task_type == "bcq_openended":
-            sys_prompt += " Answer with 'Yes' or 'No' first, followed by a detailed reasoning explanation."
+            sys_prompt += (
+                " Begin your answer with 'Yes' or 'No', then provide a"
+                " detailed reasoning explanation."
+            )
         elif task_type == "mcq":
-            sys_prompt += " Select the best option. Output only the letter (A, B, C, or D) of the correct answer."
+            sys_prompt += (
+                " Output only the single letter (A, B, C, or D) of the"
+                " correct answer."
+            )
         elif task_type == "mcq_openended":
-            sys_prompt += " Select the best option and explain your reasoning in detail."
+            sys_prompt += (
+                " Begin with the letter of the correct answer (A, B, C,"
+                " or D), then explain your reasoning in detail."
+            )
         elif task_type == "temporal_localization":
-            sys_prompt += " Provide exact temporal boundaries in strict JSON format: {'start': X, 'end': Y}."
-        else:
-            sys_prompt += " Analyze the video and answer the question in detail."
-
+            sys_prompt += (
+                ' Provide the anomaly interval as JSON:'
+                ' {"start": "MM:SS", "end": "MM:SS"}.'
+            )
+        elif task_type == "causal_linkage":
+            sys_prompt += (
+                " Identify and explain the causal chain of events that"
+                " led to the anomaly."
+            )
+        elif task_type == "scene_description":
+            sys_prompt += (
+                " Describe the scene in detail, including all visible"
+                " elements and their spatial relationships."
+            )
+        elif task_type == "video_summarization":
+            sys_prompt += (
+                " Provide a comprehensive summary of all events occurring"
+                " in the video."
+            )
+        elif task_type == "temporal_description":
+            sys_prompt += (
+                " Describe the sequence of events with close attention to"
+                " temporal order and timing."
+            )
+        else:  # open_qa
+            sys_prompt += (
+                " Analyze the video carefully and answer the question with"
+                " detailed reasoning."
+            )
+ 
         messages = [
             {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": [
-                {
-                    "type": "video", 
-                    "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}",
-                    "fps": 1.0,           # <-- ADD THIS: Samples only 1 frame per second
-                    "max_pixels": 256000  # <-- ADD THIS: Caps the spatial resolution tokens
-                },
-                {"type": "text", "text": question}
-            ]},
-            {"role": "assistant", "content": answer}
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type":       "video",
+                        "video":      f"{VIDEO_BASE}/{video_path}",
+                        "fps":        1.0,
+                        "max_pixels": 256_000,
+                    },
+                    {"type": "text", "text": question},
+                ],
+            },
+            {"role": "assistant", "content": training_answer},
         ]
-        
-        # Apply Chat Template
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+ 
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
         texts.append(text)
-        
+ 
     return {"text": texts}
+ 
+ 
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
