@@ -30,42 +30,32 @@ print("Running Video Inference...")
 for item in test_data["items"]:
     video_id = item["video_id"]
     task_type = item.get("task_type", "open_qa")
+    question = item.get("question", "")
     video_path = f"{VIDEO_DIR}/{video_id}"
     
-    # Enhanced Persona and Task-Specific Prompting
-    system_instruction = "You are an expert AI system specialized in traffic anomaly detection and reasoning. Your task is to analyze the provided traffic video and respond based on the specific constraints."
-    
-    # Set dynamic generation params based on task strictness
-    gen_kwargs = {"max_new_tokens": 512}
-    
-    if task_type == "temporal_localization":
-        system_instruction += " Analyze the video to identify the exact onset and conclusion of the anomaly. Provide your answer strictly as a JSON object with 'start' and 'end' keys representing seconds. Example: {\"start\": 12.5, \"end\": 45.0}. Do NOT include any other text, reasoning, or markdown formatting."
-        gen_kwargs.update({"do_sample": False}) # Greedy decoding for exact formatting
-        
-    elif task_type in ["bcq", "bcq_openended"]:
-        system_instruction += " Answer strictly with 'Yes' or 'No' based solely on the visual evidence."
-        gen_kwargs.update({"do_sample": False})
-        
-    elif task_type in ["mcq", "mcq_openended"]:
-        system_instruction += " Select the best option. Answer concisely by providing the exact text of the correct option."
-        gen_kwargs.update({"do_sample": False})
-        
+    # Mirroring the training prompts exactly
+    sys_prompt = "You are a traffic anomaly expert."
+    if task_type == "bcq":
+        sys_prompt += " Answer strictly with 'Yes' or 'No' and nothing else."
+    elif task_type == "bcq_openended":
+        sys_prompt += " Answer with 'Yes' or 'No' first, followed by a detailed reasoning explanation."
+    elif task_type == "mcq":
+        sys_prompt += " Select the best option. Output only the letter (A, B, C, or D) of the correct answer."
+    elif task_type == "mcq_openended":
+        sys_prompt += " Select the best option and explain your reasoning in detail."
+    elif task_type == "temporal_localization":
+        sys_prompt += " Provide exact temporal boundaries in strict JSON format: {'start': X, 'end': Y}."
     else:
-        # Chain-of-Thought for Open QA
-        system_instruction += " Think step-by-step: first identify the vehicles or pedestrians involved, describe their actions chronologically, and finally deduce the anomaly to answer the question in detail."
-        gen_kwargs.update({"do_sample": True, "temperature": 0.2, "top_p": 0.9})
+        sys_prompt += " Analyze the video and answer the question in detail."
 
     messages = [
-        {"role": "system", "content": system_instruction},
-        {
-            "role": "user",
-            "content": [
-                {"type": "video", "video": video_path, "fps": 2.0}, 
-                {"type": "text", "text": item["question"]}
-            ],
-        }
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": [
+            {"type": "video", "video": video_path},
+            {"type": "text", "text": question}
+        ]}
     ]
-
+    
     text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = process_vision_info(messages)
     
@@ -77,27 +67,42 @@ for item in test_data["items"]:
         return_tensors="pt"
     ).to("cuda")
 
+    # UPDATED: Dynamic Generation Parameters
+    if task_type in ["bcq", "mcq"]:
+        temp = 0.001 
+        max_tok = 10 
+        do_sample_flag = False # Force greedy decoding
+    else:
+        temp = 0.2
+        max_tok = 512
+        do_sample_flag = True
+
     with torch.no_grad():
-        generated_ids = model.generate(**inputs, **gen_kwargs)
+        generated_ids = model.generate(
+            **inputs, 
+            max_new_tokens=max_tok, 
+            temperature=temp,
+            do_sample=do_sample_flag
+        )
     
     generated_ids_trimmed = [
         out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
     response = processor.batch_decode(
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    )[0].strip()
+    )[0]
 
     submissions.append({
         "item_index": item["item_index"],
-        "prediction": response
+        "prediction": response.strip() # Strip added to ensure trailing spaces don't break evaluation
     })
-    print(f"Processed item {item['item_index']} [{task_type}] - Answer snippet: {response[:50]}...")
+    print(f"Processed {item['item_index']} [{task_type}] - Ans: {response[:50].strip()}...")
 
+# Outputting to standard 2-column CSV Format
 print(f"Writing to {OUTPUT_CSV}...")
 with open(OUTPUT_CSV, mode="w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["item_index", "prediction"])
     for sub in submissions:
         writer.writerow([sub["item_index"], sub["prediction"]])
-
-print(f"Saved submission strictly to {OUTPUT_CSV}")
+print("Inference Complete!")
