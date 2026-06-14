@@ -8,3 +8,4 @@ datasets
 bitsandbytes
 accelerate
 pandas
+flash-attn

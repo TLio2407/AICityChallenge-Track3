@@ -39,7 +39,12 @@ def format_vlm_prompt(examples):
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": [
-                {"type": "video", "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}"},
+                {
+                    "type": "video", 
+                    "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}",
+                    "fps": 1.0,           # <-- ADD THIS: Samples only 1 frame per second
+                    "max_pixels": 256000  # <-- ADD THIS: Caps the spatial resolution tokens
+                },
                 {"type": "text", "text": question}
             ]},
             {"role": "assistant", "content": answer}
@@ -63,7 +68,8 @@ processor = AutoProcessor.from_pretrained(MODEL_ID)
 model = Qwen2VLForConditionalGeneration.from_pretrained(
     MODEL_ID,
     quantization_config=bnb_config,
-    device_map="auto"
+    device_map="auto",
+    attn_implementation="flash_attention_2" 
 )
 model = prepare_model_for_kbit_training(model)
 
@@ -84,12 +90,14 @@ dataset = dataset.map(format_vlm_prompt, batched=True, remove_columns=dataset.co
 
 training_args = SFTConfig(
     output_dir=OUTPUT_DIR,
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=16, 
+    per_device_train_batch_size=4,     # <-- INCREASE FROM 1 TO 4
+    gradient_accumulation_steps=4,     # <-- DECREASE FROM 16 TO 4
+    dataloader_num_workers=8,          # <-- ADD THIS: Loads videos in parallel
+    dataloader_prefetch_factor=2,      # <-- ADD THIS: Queues up the next batch
     learning_rate=2e-5, 
     lr_scheduler_type="cosine", 
     warmup_steps=0.05,          
-    max_seq_length=2048, 
+    max_seq_length=1024,               # <-- REDUCE FROM 2048: Speeds up attention mapping
     logging_steps=10,
     save_strategy="epoch",
     num_train_epochs=3,
