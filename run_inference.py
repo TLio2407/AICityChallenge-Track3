@@ -9,9 +9,9 @@ from qwen_vl_utils import process_vision_info
 # UPDATED: Target the new Thinking model and corresponding adapter
 MODEL_ID = "Qwen/Qwen3-VL-8B-Thinking"
 ADAPTER_PATH = "./lora-qwen3-traffic-all-tasks"
-TEST_JSON = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
+TEST_JSON = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
 OUTPUT_CSV = "submission.csv"
-VIDEO_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos/"
+VIDEO_DIR = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos/"
 
 print("Loading Base VLM and LoRA Adapter...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)

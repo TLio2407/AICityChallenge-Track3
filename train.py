@@ -49,7 +49,7 @@ def format_vlm_prompt(examples):
             {"role": "user", "content": [
                 {
                     "type": "video", 
-                    "video": f"/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train/videos/{video_path}",
+                    "video": f"/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/videos/{video_path}",
                     "fps": 1.0,           
                     "max_pixels": 256000  
                 },

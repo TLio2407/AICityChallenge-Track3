@@ -9,7 +9,7 @@ TRAIN_FILES = [
     "temporal_localization.json", "causal_linkage.json", "temporal_description.json"
 ]
 
-TRAIN_DIR = "/media/RAID5Array/backup_home/tindd4/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train"
+TRAIN_DIR = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train"
 OUTPUT_FILE = "all_tasks_merged.json"
 
 # PRIORITY UPSAMPLING WEIGHTS
