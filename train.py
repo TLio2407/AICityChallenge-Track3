@@ -22,7 +22,6 @@ def format_vlm_prompt(examples):
     for video_path, question, answer, task_type in zipped_data:
         sys_prompt = "You are a traffic anomaly expert."
         
-        # FIXED: Isolated prompt logic to preserve reasoning for open-ended tasks
         if task_type == "bcq":
             sys_prompt += " Answer strictly with 'Yes' or 'No' and nothing else."
         elif task_type == "bcq_openended":
@@ -60,14 +59,21 @@ bnb_config = BitsAndBytesConfig(
 
 print("Loading Qwen2-VL Model and Processor...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
+
+# FIX: Set padding side explicitly for the SFTTrainer warning
+processor.tokenizer.padding_side = "right"
+
 model = Qwen2VLForConditionalGeneration.from_pretrained(
     MODEL_ID,
     quantization_config=bnb_config,
     device_map="auto"
 )
+
+# FIX: Disable use_cache to avoid conflicts with gradient checkpointing
+model.config.use_cache = False
+
 model = prepare_model_for_kbit_training(model)
 
-# UPDATED: Increased LoRA capacity to handle the upsampled priority distributions
 lora_config = LoraConfig(
     r=128, 
     lora_alpha=256, 
@@ -88,20 +94,26 @@ training_args = SFTConfig(
     gradient_accumulation_steps=16, 
     learning_rate=2e-5, 
     lr_scheduler_type="cosine", 
-    warmup_steps=0.05,          
+    warmup_steps=1,          
     max_seq_length=2048, 
     logging_steps=10,
     save_strategy="epoch",
     num_train_epochs=3,
     fp16=False,
     bf16=True,
-    dataset_text_field="text"
+    dataset_text_field="text",
+    
+    # FIX: Explicitly handle the PyTorch use_reentrant warning
+    gradient_checkpointing=True,
+    gradient_checkpointing_kwargs={"use_reentrant": False}
 )
 
 trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
     args=training_args,
+    # FIX: Use processing_class instead of relying on deprecated fallback mechanisms
+    processing_class=processor.tokenizer 
 )
 
 print("Starting Training...")
