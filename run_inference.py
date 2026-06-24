@@ -1,22 +1,19 @@
 import json
 import csv
 import torch
-import re
 from peft import PeftModel
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
-# UPDATED: Target the new Thinking model and corresponding adapter
-MODEL_ID = "Qwen/Qwen3-VL-8B-Thinking"
-ADAPTER_PATH = "./lora-qwen3-traffic-all-tasks"
+MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
+ADAPTER_PATH = "./lora-qwen-traffic-all-tasks"
 TEST_JSON = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
 OUTPUT_CSV = "submission.csv"
 VIDEO_DIR = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos/"
 
 print("Loading Base VLM and LoRA Adapter...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
-# UPDATED: New Qwen3 class
-base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+base_model = Qwen2VLForConditionalGeneration.from_pretrained(
     MODEL_ID, 
     torch_dtype=torch.bfloat16, 
     device_map="auto"
@@ -36,6 +33,7 @@ for item in test_data["items"]:
     question = item.get("question", "")
     video_path = f"{VIDEO_DIR}/{video_id}"
     
+    # Mirroring the training prompts exactly
     sys_prompt = "You are a traffic anomaly expert."
     if task_type == "bcq":
         sys_prompt += " Answer strictly with 'Yes' or 'No' and nothing else."
@@ -53,11 +51,7 @@ for item in test_data["items"]:
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": [
-            {
-                "type": "video", 
-                "video": video_path,
-                "fps": 1.0 # Added explicit FPS control here to match training distribution
-            },
+            {"type": "video", "video": video_path},
             {"type": "text", "text": question}
         ]}
     ]
@@ -73,11 +67,11 @@ for item in test_data["items"]:
         return_tensors="pt"
     ).to("cuda")
 
-    # UPDATED: Removed the severe token restrictions for MCQ/BCQ to allow the <think> block to generate
+    # UPDATED: Dynamic Generation Parameters
     if task_type in ["bcq", "mcq"]:
         temp = 0.001 
-        max_tok = 512 # Changed from 10 to 512
-        do_sample_flag = False 
+        max_tok = 10 
+        do_sample_flag = False # Force greedy decoding
     else:
         temp = 0.2
         max_tok = 512
@@ -94,27 +88,17 @@ for item in test_data["items"]:
     generated_ids_trimmed = [
         out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
-    raw_response = processor.batch_decode(
+    response = processor.batch_decode(
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
 
-    # UPDATED: Parse the output to extract the actual answer after the reasoning block
-    parsed_response = raw_response.strip()
-    if "</think>" in parsed_response:
-        parsed_response = parsed_response.split("</think>")[-1].strip()
-    
-    # Optional fail-safe: if MCQ only expects a single letter, force clean it just in case
-    if task_type == "mcq":
-        match = re.search(r'\b([A-D])\b', parsed_response)
-        if match:
-            parsed_response = match.group(1)
-
     submissions.append({
         "item_index": item["item_index"],
-        "prediction": parsed_response 
+        "prediction": response.strip() # Strip added to ensure trailing spaces don't break evaluation
     })
-    print(f"Processed {item['item_index']} [{task_type}] - Ans: {parsed_response[:50]}...")
+    print(f"Processed {item['item_index']} [{task_type}] - Ans: {response[:50].strip()}...")
 
+# Outputting to standard 2-column CSV Format
 print(f"Writing to {OUTPUT_CSV}...")
 with open(OUTPUT_CSV, mode="w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
