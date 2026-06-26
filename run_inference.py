@@ -2,18 +2,23 @@ import json
 import csv
 import torch
 from peft import PeftModel
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+# UPDATED: Import the Qwen3 architecture class
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
-MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
-ADAPTER_PATH = "./lora-qwen-traffic-all-tasks"
+# UPDATED: Match the Qwen3-VL Model ID from the training script
+MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+# UPDATED: Match the new output directory from the training script
+ADAPTER_PATH = "./lora-qwen3-traffic-all-tasks"
 TEST_JSON = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
 OUTPUT_CSV = "submission.csv"
 VIDEO_DIR = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos/"
 
 print("Loading Base VLM and LoRA Adapter...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
-base_model = Qwen2VLForConditionalGeneration.from_pretrained(
+
+# UPDATED: Use the Qwen3 model class for instantiation
+base_model = Qwen3VLForConditionalGeneration.from_pretrained(
     MODEL_ID, 
     torch_dtype=torch.bfloat16, 
     device_map="auto"
@@ -67,7 +72,7 @@ for item in test_data["items"]:
         return_tensors="pt"
     ).to("cuda")
 
-    # UPDATED: Dynamic Generation Parameters
+    # Dynamic Generation Parameters
     if task_type in ["bcq", "mcq"]:
         temp = 0.001 
         max_tok = 10 

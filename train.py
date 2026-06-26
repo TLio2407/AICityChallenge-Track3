@@ -1,12 +1,14 @@
 import os
 import torch
 from datasets import load_dataset
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
+# Updated to import the Qwen3 architecture class
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer, SFTConfig
 
-MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
-OUTPUT_DIR = "./lora-qwen-traffic-all-tasks"
+# Upgraded to Qwen3-VL 
+MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+OUTPUT_DIR = "./lora-qwen3-traffic-all-tasks"
 DATA_PATH = "all_tasks_merged.json" 
 
 def format_vlm_prompt(examples):
@@ -57,16 +59,18 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_compute_dtype=torch.bfloat16
 )
 
-print("Loading Qwen2-VL Model and Processor...")
+print("Loading Qwen3-VL Model and Processor...")
 processor = AutoProcessor.from_pretrained(MODEL_ID)
 
 # FIX: Set padding side explicitly for the SFTTrainer warning
 processor.tokenizer.padding_side = "right"
 
-model = Qwen2VLForConditionalGeneration.from_pretrained(
+# SPEED BOOST: Added Flash Attention 2
+model = Qwen3VLForConditionalGeneration.from_pretrained(
     MODEL_ID,
     quantization_config=bnb_config,
-    device_map="auto"
+    device_map="auto",
+    # attn_implementation="flash_attention_2" 
 )
 
 # FIX: Disable use_cache to avoid conflicts with gradient checkpointing
@@ -95,7 +99,7 @@ training_args = SFTConfig(
     learning_rate=2e-5, 
     lr_scheduler_type="cosine", 
     warmup_steps=1,          
-    max_seq_length=2048, 
+    max_length=2048, 
     logging_steps=10,
     save_strategy="epoch",
     num_train_epochs=3,
@@ -105,15 +109,18 @@ training_args = SFTConfig(
     
     # FIX: Explicitly handle the PyTorch use_reentrant warning
     gradient_checkpointing=True,
-    gradient_checkpointing_kwargs={"use_reentrant": False}
+    gradient_checkpointing_kwargs={"use_reentrant": False},
+    
+    # SPEED BOOSTS: Use fused optimizer and multiple workers for data loading
+    optim="adamw_torch_fused",
+    dataloader_num_workers=4
 )
 
 trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
     args=training_args,
-    # FIX: Use processing_class instead of relying on deprecated fallback mechanisms
-    processing_class=processor.tokenizer 
+    processing_class=processor.tokenizer
 )
 
 print("Starting Training...")

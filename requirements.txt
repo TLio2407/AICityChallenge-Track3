@@ -1,10 +1,13 @@
-torch>=2.1.2
+torch
 torchvision
-transformers>=4.44.0
+transformers
 qwen-vl-utils
 peft
-trl==0.19.1
+trl
+rich
 datasets
 bitsandbytes
 accelerate
 pandas
+av
+decord
