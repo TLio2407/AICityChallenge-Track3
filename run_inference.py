@@ -15,6 +15,7 @@ KEY IMPROVEMENTS vs original:
 import json
 import csv
 import re
+import os
 import ast
 from collections import Counter
 
@@ -24,7 +25,7 @@ from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-MODEL_ID     = "Qwen/Qwen3-VL-7B-Instruct"   # match training
+MODEL_ID     = "Qwen/Qwen3-VL-8B-Instruct"   # match training
 ADAPTER_PATH = "./lora-qwen3-traffic-v2"
 TEST_JSON    = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
 VIDEO_DIR    = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos"
@@ -311,11 +312,34 @@ items = test_data.get("items", test_data)  # handle both formats
 
 print(f"Running inference on {len(items)} items …")
 
+import os # Make sure os is imported at the top of your file if it isn't already
+
 for item in items:
     video_id  = item["video_id"]
     task_type = item.get("task_type", "open_qa")
     question  = item.get("question", "")
     video_path = os.path.join(VIDEO_DIR, video_id) if not os.path.isabs(video_id) else video_id
+
+    # -- NEW CHECK FOR MISSING VIDEOS --
+    if not os.path.exists(video_path):
+        print(f"  ⚠ Video not found, skipping inference: {video_path}")
+        
+        # Provide a fallback prediction to keep the CSV rows aligned
+        if task_type == "bcq":
+            prediction = "No"
+        elif task_type == "mcq":
+            prediction = "A"
+        elif task_type == "temporal_localization":
+            prediction = '{"start": 0.0, "end": 0.0}'
+        else:
+            prediction = ""
+            
+        submissions.append({
+            "item_index": item["item_index"],
+            "prediction": prediction,
+        })
+        continue 
+    # ----------------------------------
 
     messages = [
         {"role": "system", "content": get_system_prompt(task_type)},

@@ -34,7 +34,7 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from qwen_vl_utils import process_vision_info
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-MODEL_ID        = "Qwen/Qwen3-VL-7B-Instruct"   # 7B > 4B for open-ended F1
+MODEL_ID        = "Qwen/Qwen3-VL-8B-Instruct"   # 7B > 4B for open-ended F1
 OUTPUT_DIR      = "./lora-qwen3-traffic-v2"
 DATA_PATH       = "all_tasks_merged.json"
 VIDEO_BASE_DIR  = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/videos"
@@ -312,8 +312,17 @@ def main():
     with open(DATA_PATH, "r") as f:
         raw_data = json.load(f)
 
-    print(f"Loaded {len(raw_data)} training samples.")
-    train_dataset = VideoQADataset(raw_data, processor, VIDEO_BASE_DIR)
+    # Filter out missing videos
+    valid_data = []
+    for item in raw_data:
+        video_path = os.path.join(VIDEO_BASE_DIR, item["video_id"])
+        if os.path.exists(video_path):
+            valid_data.append(item)
+        else:
+            print(f"  ⚠ Skipping missing training video: {video_path}")
+
+    print(f"Loaded {len(valid_data)} valid training samples (skipped {len(raw_data) - len(valid_data)}).")
+    train_dataset = VideoQADataset(valid_data, processor, VIDEO_BASE_DIR)
 
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,

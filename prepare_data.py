@@ -60,7 +60,13 @@ TASK_WEIGHTS = {
     "mcq_openended":         2,
 }
 
-MIN_ANSWER_LEN = 5
+# BCQ answers = "Yes"/"No" (2-3 chars), MCQ = "A"/"B"/"C"/"D" (1 char)
+# Per-task minimums prevent filtering these out while still catching blanks
+TASK_MIN_ANSWER_LEN = {
+    "bcq":  2,   # "No"
+    "mcq":  1,   # "A"
+}
+MIN_ANSWER_LEN = 1   # global fallback (effective filter is task-specific below)
 MAX_ANSWER_LEN = 4000
 
 
@@ -156,7 +162,8 @@ def process_and_merge():
             # ── Quality filter ──
             answer = str(item.get("answer", "")).strip()
 
-            if len(answer) < MIN_ANSWER_LEN:
+            min_len = TASK_MIN_ANSWER_LEN.get(task_type, MIN_ANSWER_LEN)
+            if len(answer) < min_len:
                 task_skipped += 1
                 continue
             if len(answer) > MAX_ANSWER_LEN:
