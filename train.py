@@ -12,6 +12,7 @@ KEY FIXES vs original:
 4. fps=1.0 + max_pixels cap keeps memory bounded for long surveillance videos.
 5. Replaced SFTTrainer with plain Trainer for full control over collation.
 6. Chain-of-thought answers retained (dataset has CoT traces).
+7. [CRITICAL FIX] Added mm_token_type_ids extraction and padding for M-RoPE support.
 """
 
 import os
@@ -37,7 +38,7 @@ from qwen_vl_utils import process_vision_info
 MODEL_ID        = "Qwen/Qwen3-VL-8B-Instruct"   # 7B > 4B for open-ended F1
 OUTPUT_DIR      = "./lora-qwen3-traffic-v2"
 DATA_PATH       = "all_tasks_merged.json"
-VIDEO_BASE_DIR  = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/videos"
+VIDEO_BASE_DIR  = "/media/RAID5Array/pdcuong/PhysicalAI-Traffic-Anomaly-Reasoning/videos"
 MAX_LENGTH      = 3072         # longer context captures more video frames
 VIDEO_FPS       = 1.0          # 1 frame/sec → manageable token budget for long clips
 VIDEO_MAX_PIXELS = 360 * 480   # ~170K pixels per frame
@@ -188,7 +189,14 @@ class VideoQADataset(Dataset):
         labels[:prompt_len] = -100   # mask system + user + "<|im_start|>assistant\n"
         labels[labels == self.processor.tokenizer.pad_token_id] = -100
 
-        result = {k: v[0] for k, v in encoding.items()}
+        # -- FIX: Unpack 1D sequence tensors, including mm_token_type_ids --
+        result = {}
+        for k, v in encoding.items():
+            if k in ["input_ids", "attention_mask", "mm_token_type_ids"]:
+                result[k] = v[0]  
+            else:
+                result[k] = v     
+
         result["labels"] = labels
         return result
 
@@ -249,6 +257,12 @@ class VideoCollator:
             batch["labels"].append(
                 torch.nn.functional.pad(f["labels"], (0, pad_len), value=-100)
             )
+            
+            # -- FIX: Pad mm_token_type_ids if present --
+            if "mm_token_type_ids" in f:
+                batch.setdefault("mm_token_type_ids", []).append(
+                    torch.nn.functional.pad(f["mm_token_type_ids"], (0, pad_len), value=0)
+                )
 
             # Vision tensors — include only from first item (batch_size=1 in practice)
             for k in ["pixel_values", "pixel_values_videos", "image_grid_thw", "video_grid_thw"]:
@@ -260,6 +274,10 @@ class VideoCollator:
             "attention_mask": torch.stack(batch["attention_mask"]),
             "labels":         torch.stack(batch["labels"]),
         }
+        
+        # -- FIX: Stack mm_token_type_ids into the batch result --
+        if "mm_token_type_ids" in batch and len(batch["mm_token_type_ids"]) > 0:
+            result["mm_token_type_ids"] = torch.stack(batch["mm_token_type_ids"])
 
         # Vision tensors — concat along batch dim when present
         for k in ["pixel_values", "pixel_values_videos", "image_grid_thw", "video_grid_thw"]:
@@ -330,7 +348,7 @@ def main():
         gradient_accumulation_steps=16,  # effective batch = 16
         learning_rate=1e-4,              # higher LR works well for LoRA
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_steps=0.03,
         num_train_epochs=3,
         max_steps=-1,
         logging_steps=10,

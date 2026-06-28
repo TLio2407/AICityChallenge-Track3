@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-TRAIN_DIR   = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/train"
+TRAIN_DIR   = "/media/RAID5Array/pdcuong/PhysicalAI-Traffic-Anomaly-Reasoning/train"
 OUTPUT_FILE = "all_tasks_merged.json"
 VAL_FILE    = "val_tasks_merged.json"     # set VAL_SPLIT > 0 to create
 VAL_SPLIT   = 0.0                         # 0 = no val set; 0.05 = 5 % val

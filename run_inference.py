@@ -27,8 +27,8 @@ from qwen_vl_utils import process_vision_info
 # ─── Paths ────────────────────────────────────────────────────────────────────
 MODEL_ID     = "Qwen/Qwen3-VL-8B-Instruct"   # match training
 ADAPTER_PATH = "./lora-qwen3-traffic-v2"
-TEST_JSON    = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
-VIDEO_DIR    = "/media/RAID5Array/haolp/AIC26/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos"
+TEST_JSON    = "/media/RAID5Array/pdcuong/PhysicalAI-Traffic-Anomaly-Reasoning/test/test.json"
+VIDEO_DIR    = "/media/RAID5Array/pdcuong/PhysicalAI-Traffic-Anomaly-Reasoning/test/videos"
 OUTPUT_CSV   = "submission.csv"
 
 # Self-consistency: how many samples to generate for BCQ/MCQ
